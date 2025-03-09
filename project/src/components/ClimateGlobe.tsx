@@ -1,350 +1,305 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls } from '@react-three/drei';
+import { Canvas, useFrame, useLoader } from '@react-three/fiber';
+import { OrbitControls, Text } from '@react-three/drei';
 import * as THREE from 'three';
 
 interface GlobeProps {
   temperature: number;
-  precipitation: number;
-  seaLevel: number;
   region: string;
-  metric: 'temperature' | 'precipitation' | 'seaLevel';
 }
 
-// Enhanced color scales for better visibility
+// Enhanced color scales for better temperature visualization
 const getTemperatureColor = (temp: number): string => {
-  if (temp <= 0.5) return '#3b82f6';  // Cool blue
-  if (temp <= 1.0) return '#22c55e';  // Moderate green
-  if (temp <= 1.5) return '#eab308';  // Warning yellow
-  if (temp <= 2.0) return '#f97316';  // Alert orange
-  return '#ef4444';                   // Critical red
+  if (temp <= 0.5) return '#3b82f6';      // Cool blue for low temp
+  if (temp <= 1.0) return '#22c55e';      // Moderate green
+  if (temp <= 1.5) return '#eab308';      // Warning yellow
+  if (temp <= 2.0) return '#f97316';      // Alert orange
+  if (temp <= 2.5) return '#ef4444';      // Critical red
+  return '#7f1d1d';                       // Dark red for extreme heat
 };
 
-const getPrecipitationColor = (precip: number): string => {
-  if (precip <= 0) return '#fef3c7';   // Very dry - pale yellow
-  if (precip <= 5) return '#86efac';   // Light green
-  if (precip <= 10) return '#22c55e';  // Medium green
-  if (precip <= 15) return '#15803d';  // Dark green
-  return '#064e3b';                    // Very wet - forest green
-};
-
-const getSeaLevelColor = (level: number): string => {
-  if (level <= 5) return '#bfdbfe';    // Light blue
-  if (level <= 10) return '#60a5fa';   // Medium blue
-  if (level <= 15) return '#2563eb';   // Strong blue
-  if (level <= 20) return '#1e40af';   // Dark blue
-  return '#1e3a8a';                    // Very dark blue
-};
-
-const getColorForMetric = (value: number, metric: string): string => {
-  switch (metric) {
-    case 'temperature':
-      return getTemperatureColor(value);
-    case 'precipitation':
-      return getPrecipitationColor(value);
-    case 'seaLevel':
-      return getSeaLevelColor(value);
-    default:
-      return '#cccccc';
-  }
-};
-
-// Improved region definitions with more precise coordinates
+// Region definitions with precise coordinates and dot positions
 const regions: Record<string, {
   coordinates: [number, number, number, number], // [startLat, startLon, endLat, endLon]
   tempOffset: number,
-  precipOffset: number,
-  seaLevelOffset: number,
-  name: string
+  name: string,
+  dots: Array<[number, number]> // Array of [lat, lon] for dots
 }> = {
   'Global': { 
     coordinates: [-90, -180, 90, 180],
     tempOffset: 0,
-    precipOffset: 0,
-    seaLevelOffset: 0,
-    name: 'Global'
+    name: 'Global',
+    dots: Array.from({ length: 200 }, () => [
+      Math.random() * 180 - 90,
+      Math.random() * 360 - 180
+    ])
   },
   'North America': {
     coordinates: [15, -170, 75, -50],
     tempOffset: -0.2,
-    precipOffset: 2,
-    seaLevelOffset: -1,
-    name: 'North America'
+    name: 'North America',
+    dots: Array.from({ length: 50 }, () => [
+      15 + Math.random() * 60,
+      -170 + Math.random() * 120
+    ])
   },
   'South America': {
     coordinates: [-60, -80, 15, -30],
     tempOffset: 0.3,
-    precipOffset: 5,
-    seaLevelOffset: 2,
-    name: 'South America'
+    name: 'South America',
+    dots: Array.from({ length: 40 }, () => [
+      -60 + Math.random() * 75,
+      -80 + Math.random() * 50
+    ])
   },
   'Europe': {
     coordinates: [35, -10, 70, 40],
     tempOffset: 0.1,
-    precipOffset: 1,
-    seaLevelOffset: 1,
-    name: 'Europe'
+    name: 'Europe',
+    dots: Array.from({ length: 40 }, () => [
+      35 + Math.random() * 35,
+      -10 + Math.random() * 50
+    ])
   },
   'Africa': {
     coordinates: [-40, -20, 35, 50],
     tempOffset: 0.5,
-    precipOffset: -2,
-    seaLevelOffset: 2,
-    name: 'Africa'
+    name: 'Africa',
+    dots: Array.from({ length: 60 }, () => [
+      -40 + Math.random() * 75,
+      -20 + Math.random() * 70
+    ])
   },
   'Asia': {
     coordinates: [0, 60, 75, 180],
     tempOffset: 0.4,
-    precipOffset: 3,
-    seaLevelOffset: 3,
-    name: 'Asia'
-  },
-  'Oceania': {
-    coordinates: [-50, 110, 0, 180],
-    tempOffset: 0.2,
-    precipOffset: 4,
-    seaLevelOffset: 4,
-    name: 'Oceania'
+    name: 'Asia',
+    dots: Array.from({ length: 80 }, () => [
+      0 + Math.random() * 75,
+      60 + Math.random() * 120
+    ])
   },
   'India': {
     coordinates: [8, 68, 37, 97],
     tempOffset: 0.6,
-    precipOffset: 6,
-    seaLevelOffset: 3,
-    name: 'India'
+    name: 'India',
+    dots: Array.from({ length: 30 }, () => [
+      8 + Math.random() * 29,
+      68 + Math.random() * 29
+    ])
+  },
+  'Oceania': {
+    coordinates: [-50, 110, 0, 180],
+    tempOffset: 0.2,
+    name: 'Oceania',
+    dots: Array.from({ length: 40 }, () => [
+      -50 + Math.random() * 50,
+      110 + Math.random() * 70
+    ])
   }
 };
 
-const Globe = ({ temperature, precipitation, seaLevel, region, metric }: GlobeProps) => {
-  const globeRef = useRef<THREE.Mesh>(null);
-  const textureRef = useRef<THREE.CanvasTexture | null>(null);
+// Generate random dots for unknown regions
+const generateRandomDots = (count: number = 30): Array<[number, number]> => {
+  return Array.from({ length: count }, () => [
+    Math.random() * 180 - 90, // Random latitude
+    Math.random() * 360 - 180 // Random longitude
+  ]);
+};
 
-  useFrame(() => {
-    if (globeRef.current) {
-      globeRef.current.rotation.y += 0.001;
+// Convert lat/lon to 3D coordinates
+function latLonToVector3(lat: number, lon: number, radius: number): THREE.Vector3 {
+  const phi = (90 - lat) * (Math.PI / 180);
+  const theta = (lon + 180) * (Math.PI / 180);
+
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+interface DotProps {
+  position: THREE.Vector3;
+  color: string;
+  size?: number;
+  pulse?: boolean;
+  temperature: number;
+}
+
+function Dot({ position, color, size = 0.05, pulse = false, temperature }: DotProps) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const [hovered, setHovered] = useState(false);
+
+  useFrame(({ clock }) => {
+    if (meshRef.current && (pulse || hovered)) {
+      const scale = 1 + Math.sin(clock.getElapsedTime() * 2) * 0.2;
+      meshRef.current.scale.setScalar(scale);
     }
   });
 
-  useEffect(() => {
-    const canvas = document.createElement('canvas');
-    canvas.width = 2048;
-    canvas.height = 1024;
-    const ctx = canvas.getContext('2d')!;
+  return (
+    <group>
+      <mesh
+        ref={meshRef}
+        position={position}
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+      >
+        <sphereGeometry args={[size, 8, 8]} />
+        <meshPhongMaterial
+          color={color}
+          transparent
+          opacity={0.8}
+          emissive={color}
+          emissiveIntensity={hovered ? 1 : 0.5}
+        />
+      </mesh>
+      {hovered && (
+        <Text
+          position={[position.x, position.y + 0.2, position.z]}
+          fontSize={0.1}
+          color={color}
+          anchorX="center"
+          anchorY="middle"
+        >
+          {`${temperature.toFixed(1)}°C`}
+        </Text>
+      )}
+    </group>
+  );
+}
 
-    // Draw base map with improved gradient
-    const baseValue = metric === 'temperature' ? temperature :
-                     metric === 'precipitation' ? precipitation :
-                     seaLevel;
-    const baseColor = getColorForMetric(baseValue, metric);
-    
-    // Create gradient background
-    const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
-    gradient.addColorStop(0, baseColor);
-    gradient.addColorStop(1, adjustColor(baseColor, -20));
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+const Globe = ({ temperature, region }: GlobeProps) => {
+  const globeRef = useRef<THREE.Group>(null);
+  const cloudsRef = useRef<THREE.Mesh>(null);
+  const atmosphereRef = useRef<THREE.Mesh>(null);
 
-    // Draw enhanced grid lines
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
-    ctx.lineWidth = 1;
+  // Load Earth textures
+  const [earthMap, earthNormal, earthSpec, earthClouds] = useLoader(THREE.TextureLoader, [
+    'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_atmos_2048.jpg',
+    'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg',
+    'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_specular_2048.jpg',
+    'https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_clouds_1024.png'
+  ]);
 
-    // Latitude lines with labels
-    for (let lat = -80; lat <= 80; lat += 20) {
-      const y = (90 - lat) * (canvas.height / 180);
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(canvas.width, y);
-      ctx.stroke();
-
-      // Add latitude labels
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.font = '14px Arial';
-      ctx.textAlign = 'left';
-      ctx.fillText(`${lat}°`, 5, y);
+  useFrame(({ clock }) => {
+    if (globeRef.current) {
+      globeRef.current.rotation.y += 0.001;
     }
-
-    // Longitude lines with labels
-    for (let lon = -180; lon <= 180; lon += 30) {
-      const x = (lon + 180) * (canvas.width / 360);
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, canvas.height);
-      ctx.stroke();
-
-      // Add longitude labels
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-      ctx.font = '14px Arial';
-      ctx.textAlign = 'center';
-      ctx.fillText(`${lon}°`, x, canvas.height - 5);
+    if (cloudsRef.current) {
+      cloudsRef.current.rotation.y += 0.0015;
     }
+    if (atmosphereRef.current) {
+      atmosphereRef.current.rotation.y += 0.001;
+      atmosphereRef.current.material.opacity = 0.6 + Math.sin(clock.getElapsedTime() * 0.5) * 0.1;
+    }
+  });
 
-    // Draw regions with improved blending
-    Object.entries(regions).forEach(([regionName, regionData]) => {
-      if (region === 'Global' || region === regionName) {
-        const [startLat, startLon, endLat, endLon] = regionData.coordinates;
-        const value = metric === 'temperature' ? temperature + regionData.tempOffset :
-                     metric === 'precipitation' ? precipitation + regionData.precipOffset :
-                     seaLevel + regionData.seaLevelOffset;
-        const color = getColorForMetric(value, metric);
+  // Generate dots for the selected region or all regions
+  const dots = React.useMemo(() => {
+    const dotsToRender: Array<{ position: THREE.Vector3; color: string; pulse: boolean; temperature: number }> = [];
 
-        // Convert coordinates to canvas positions
-        const x1 = ((startLon + 180) / 360) * canvas.width;
-        const y1 = ((90 - startLat) / 180) * canvas.height;
-        const x2 = ((endLon + 180) / 360) * canvas.width;
-        const y2 = ((90 - endLat) / 180) * canvas.height;
-
-        // Create gradient fill for region
-        const regionGradient = ctx.createLinearGradient(x1, y1, x1, y2);
-        regionGradient.addColorStop(0, color);
-        regionGradient.addColorStop(1, adjustColor(color, -15));
-        
-        // Draw region with gradient and soft edges
-        ctx.fillStyle = regionGradient;
-        ctx.globalAlpha = 0.85;
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(x2, y1);
-        ctx.lineTo(x2, y2);
-        ctx.lineTo(x1, y2);
-        ctx.closePath();
-        ctx.fill();
-        ctx.globalAlpha = 1;
-
-        // Add region label and value
-        if (region === regionName) {
-          // Draw highlighted border
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-          ctx.lineWidth = 4;
-          ctx.strokeRect(x1, y2, x2 - x1, y1 - y2);
-
-          // Add value label with background
-          const centerX = (x1 + x2) / 2;
-          const centerY = (y1 + y2) / 2;
-          const unit = metric === 'temperature' ? '°C' :
-                      metric === 'precipitation' ? '%' :
-                      'cm';
-          const label = `${value.toFixed(1)}${unit}`;
-          
-          // Draw label background
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-          const padding = 10;
-          const labelWidth = ctx.measureText(label).width + padding * 2;
-          ctx.fillRect(
-            centerX - labelWidth / 2,
-            centerY - 15,
-            labelWidth,
-            30
-          );
-
-          // Draw label text
-          ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-          ctx.font = 'bold 24px Arial';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(label, centerX, centerY);
+    if (region === 'Global') {
+      // Show all regions for global view
+      Object.entries(regions).forEach(([regionName, regionData]) => {
+        if (regionName !== 'Global') {
+          const regionTemp = temperature + regionData.tempOffset;
+          const color = getTemperatureColor(regionTemp);
+          regionData.dots.forEach(([lat, lon]) => {
+            dotsToRender.push({
+              position: latLonToVector3(lat, lon, 2.02),
+              color,
+              pulse: false,
+              temperature: regionTemp
+            });
+          });
         }
-      }
-    });
+      });
+    } else {
+      // Handle specific region (including unknown regions)
+      const regionData = regions[region];
+      const tempOffset = regionData ? regionData.tempOffset : 0.3; // Default offset for unknown regions
+      const regionTemp = temperature + tempOffset;
+      const color = getTemperatureColor(regionTemp);
+      const dots = regionData ? regionData.dots : generateRandomDots();
 
-    // Add atmospheric effects
-    for (let i = 0; i < 50000; i++) {
-      const x = Math.random() * canvas.width;
-      const y = Math.random() * canvas.height;
-      const opacity = Math.random() * 0.1;
-      ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
-      ctx.fillRect(x, y, 1, 1);
+      dots.forEach(([lat, lon]) => {
+        dotsToRender.push({
+          position: latLonToVector3(lat, lon, 2.02),
+          color,
+          pulse: true,
+          temperature: regionTemp
+        });
+      });
     }
 
-    // Update texture
-    if (textureRef.current) {
-      textureRef.current.dispose();
-    }
-    textureRef.current = new THREE.CanvasTexture(canvas);
-    textureRef.current.needsUpdate = true;
-
-    return () => {
-      if (textureRef.current) {
-        textureRef.current.dispose();
-      }
-    };
-  }, [temperature, precipitation, seaLevel, region, metric]);
+    return dotsToRender;
+  }, [temperature, region]);
 
   return (
-    <mesh ref={globeRef}>
-      <sphereGeometry args={[2, 64, 64]} />
-      <meshPhongMaterial
-        map={textureRef.current}
-        bumpMap={textureRef.current}
-        bumpScale={0.1}
-        specularMap={textureRef.current}
-        specular={new THREE.Color(0x444444)}
-        shininess={10}
-      />
-    </mesh>
+    <group ref={globeRef}>
+      {/* Earth Sphere */}
+      <mesh castShadow receiveShadow>
+        <sphereGeometry args={[2, 64, 64]} />
+        <meshPhongMaterial
+          map={earthMap}
+          normalMap={earthNormal}
+          specularMap={earthSpec}
+          shininess={15}
+          bumpMap={earthNormal}
+          bumpScale={0.05}
+        />
+      </mesh>
+
+      {/* Temperature Dots */}
+      {dots.map((dot, index) => (
+        <Dot
+          key={index}
+          position={dot.position}
+          color={dot.color}
+          pulse={dot.pulse}
+          temperature={dot.temperature}
+          size={dot.pulse ? 0.06 : 0.04}
+        />
+      ))}
+
+      {/* Cloud Layer */}
+      <mesh ref={cloudsRef}>
+        <sphereGeometry args={[2.02, 64, 64]} />
+        <meshPhongMaterial
+          map={earthClouds}
+          transparent
+          opacity={0.4}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+
+      {/* Atmosphere Glow */}
+      <mesh ref={atmosphereRef}>
+        <sphereGeometry args={[2.1, 64, 64]} />
+        <meshPhongMaterial
+          color="#4a90e2"
+          transparent
+          opacity={0.1}
+          side={THREE.BackSide}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+    </group>
   );
 };
 
-interface ClimateGlobeProps {
-  temperature: number;
-  precipitation?: number;
-  seaLevel?: number;
-  region: string;
-}
-
-const ClimateGlobe = ({
-  temperature = 1.1,
-  precipitation = 5,
-  seaLevel = 10,
-  region = 'Global'
-}: ClimateGlobeProps) => {
-  const [activeMetric, setActiveMetric] = useState<'temperature' | 'precipitation' | 'seaLevel'>('temperature');
-
+export default function ClimateGlobe({ temperature, region }: GlobeProps) {
   return (
     <div className="space-y-4">
-      <div className="flex justify-center space-x-4">
-        <button
-          onClick={() => setActiveMetric('temperature')}
-          className={`px-4 py-2 rounded-lg transition-colors ${
-            activeMetric === 'temperature'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-accent hover:bg-accent/80'
-          }`}
-        >
-          Temperature
-        </button>
-        <button
-          onClick={() => setActiveMetric('precipitation')}
-          className={`px-4 py-2 rounded-lg transition-colors ${
-            activeMetric === 'precipitation'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-accent hover:bg-accent/80'
-          }`}
-        >
-          Precipitation
-        </button>
-        <button
-          onClick={() => setActiveMetric('seaLevel')}
-          className={`px-4 py-2 rounded-lg transition-colors ${
-            activeMetric === 'seaLevel'
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-accent hover:bg-accent/80'
-          }`}
-        >
-          Sea Level
-        </button>
-      </div>
-
       <div className="w-full h-[600px] bg-gray-900 rounded-lg overflow-hidden">
         <Canvas camera={{ position: [0, 0, 6], fov: 45 }}>
           <ambientLight intensity={0.5} />
           <pointLight position={[10, 10, 10]} intensity={1} />
-          <Globe
-            temperature={temperature}
-            precipitation={precipitation}
-            seaLevel={seaLevel}
-            region={region}
-            metric={activeMetric}
-          />
+          <directionalLight position={[5, 3, 5]} intensity={0.8} />
+          <Globe temperature={temperature} region={region} />
           <OrbitControls
             enableZoom={true}
             enablePan={false}
@@ -356,52 +311,18 @@ const ClimateGlobe = ({
         </Canvas>
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <div className="p-4 bg-card rounded-lg border">
-          <div className="text-sm font-medium mb-2">Temperature Scale</div>
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>≤0.5°C</span>
-            <span>1.0°C</span>
-            <span>1.5°C</span>
-            <span>2.0°C</span>
-            <span>≥2.5°C</span>
-          </div>
-          <div className="h-2 mt-1 rounded-full bg-gradient-to-r from-blue-500 via-green-500 via-yellow-500 via-orange-500 to-red-500" />
+      <div className="p-4 bg-card rounded-lg border">
+        <div className="text-sm font-medium mb-2">Temperature Scale</div>
+        <div className="flex justify-between text-xs text-muted-foreground">
+          <span>≤0.5°C</span>
+          <span>1.0°C</span>
+          <span>1.5°C</span>
+          <span>2.0°C</span>
+          <span>2.5°C</span>
+          <span>≥3.0°C</span>
         </div>
-        <div className="p-4 bg-card rounded-lg border">
-          <div className="text-sm font-medium mb-2">Precipitation Scale</div>
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>≤0%</span>
-            <span>5%</span>
-            <span>10%</span>
-            <span>15%</span>
-            <span>≥20%</span>
-          </div>
-          <div className="h-2 mt-1 rounded-full bg-gradient-to-r from-yellow-100 via-green-300 via-green-500 via-green-700 to-green-900" />
-        </div>
-        <div className="p-4 bg-card rounded-lg border">
-          <div className="text-sm font-medium mb-2">Sea Level Scale</div>
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>≤5cm</span>
-            <span>10cm</span>
-            <span>15cm</span>
-            <span>20cm</span>
-            <span>≥25cm</span>
-          </div>
-          <div className="h-2 mt-1 rounded-full bg-gradient-to-r from-blue-200 via-blue-400 via-blue-600 via-blue-700 to-blue-900" />
-        </div>
+        <div className="h-2 mt-1 rounded-full bg-gradient-to-r from-blue-500 via-green-500 via-yellow-500 via-orange-500 to-red-900" />
       </div>
     </div>
   );
-};
-
-// Helper function to adjust color brightness
-function adjustColor(color: string, amount: number): string {
-  const hex = color.replace('#', '');
-  const r = Math.max(0, Math.min(255, parseInt(hex.substring(0, 2), 16) + amount));
-  const g = Math.max(0, Math.min(255, parseInt(hex.substring(2, 4), 16) + amount));
-  const b = Math.max(0, Math.min(255, parseInt(hex.substring(4, 6), 16) + amount));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
-
-export default ClimateGlobe;

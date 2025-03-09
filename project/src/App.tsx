@@ -32,20 +32,15 @@ function NavItem({ icon: Icon, label, active, onClick }: NavItemProps) {
 function App() {
   const [activeSection, setActiveSection] = useState('home');
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState<Alert[]>([
-    {
-      id: '1',
-      title: 'Temperature Alert',
-      message: 'Significant temperature increase detected in Asia region',
-      severity: 'high',
-      timestamp: new Date(),
-      status: 'active',
-      kpi: 'temperature',
-      value: 2.5,
-      threshold: 2.0,
-      region: 'Asia'
-    }
-  ]);
+  const [notifications, setNotifications] = useState<Alert[]>([]);
+
+  const handleAddNotification = (alert: Alert) => {
+    setNotifications(prev => [alert, ...prev]);
+  };
+
+  const handleDismissNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -97,7 +92,7 @@ function App() {
                   <div className="absolute right-0 top-full mt-2 z-50">
                     <NotificationsPanel
                       alerts={notifications}
-                      onDismiss={(id) => setNotifications(notifications.filter(n => n.id !== id))}
+                      onDismiss={handleDismissNotification}
                       onClose={() => setShowNotifications(false)}
                     />
                   </div>
@@ -111,7 +106,9 @@ function App() {
 
       {/* Main Content */}
       <main className="flex-1 p-8">
-        {activeSection === 'home' && <ClimateAIDashboard />}
+        {activeSection === 'home' && (
+          <ClimateAIDashboard onNotification={handleAddNotification} />
+        )}
         {activeSection === 'about' && <AboutSection />}
         {activeSection === 'datasets' && <DatasetSection />}
         {activeSection === 'resources' && <ResourcesSection />}

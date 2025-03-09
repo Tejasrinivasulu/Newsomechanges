@@ -1,30 +1,61 @@
 import React, { useState } from 'react';
 import { Download, Share2, RefreshCw, FileSpreadsheet, Mail, MessageSquare, Loader2 } from 'lucide-react';
 import type { ShareFormData, ExportFormat, ActionPanelProps } from './types';
-import { downloadData, generateClimateData } from '../../utils/dataExport';
+import { downloadData } from '../../utils/dataExport';
 import { shareViaEmail, shareViaWhatsApp } from '../../utils/shareUtils';
 
 interface ExtendedActionPanelProps extends ActionPanelProps {
   selectedRegion: string;
   selectedYear: number;
+  metrics: {
+    temperature: string;
+    precipitation: string;
+    seaLevel: string;
+    extremeEvents: string;
+  };
+  historicalData: Array<{
+    year: number;
+    temperature: number;
+    precipitation: number;
+    seaLevel: number;
+  }>;
 }
 
-export default function ActionPanel({ onRefresh, selectedRegion, selectedYear }: ExtendedActionPanelProps) {
+export default function ActionPanel({ 
+  onRefresh, 
+  selectedRegion, 
+  selectedYear,
+  metrics,
+  historicalData
+}: ExtendedActionPanelProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [isSharing, setIsSharing] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showFormatMenu, setShowFormatMenu] = useState(false);
   const [showShareMenu, setShowShareMenu] = useState(false);
 
   const handleDownload = async (format: ExportFormat) => {
     setIsExporting(true);
     try {
-      const data = generateClimateData(2023, selectedYear, selectedRegion);
+      // Convert current metrics to ClimateData format
+      const currentData = {
+        year: selectedYear,
+        temperature: parseFloat(metrics.temperature),
+        precipitation: parseFloat(metrics.precipitation),
+        seaLevel: parseFloat(metrics.seaLevel),
+        extremeEvents: parseFloat(metrics.extremeEvents)
+      };
+
+      // Combine historical data with current data
+      const data = [
+        ...historicalData,
+        currentData
+      ].sort((a, b) => a.year - b.year);
+
       downloadData(data, {
         format,
         region: selectedRegion,
         yearRange: {
-          start: 2023,
+          start: data[0].year,
           end: selectedYear
         },
         metrics: ['temperature', 'precipitation', 'seaLevel', 'extremeEvents']
@@ -38,7 +69,14 @@ export default function ActionPanel({ onRefresh, selectedRegion, selectedYear }:
   const handleShare = async (type: 'whatsapp' | 'email') => {
     setIsSharing(true);
     try {
-      const data = generateClimateData(2023, selectedYear, selectedRegion);
+      const data = [{
+        year: selectedYear,
+        temperature: parseFloat(metrics.temperature),
+        precipitation: parseFloat(metrics.precipitation),
+        seaLevel: parseFloat(metrics.seaLevel),
+        extremeEvents: parseFloat(metrics.extremeEvents)
+      }];
+
       if (type === 'email') {
         shareViaEmail(data, selectedRegion, selectedYear);
       } else {
@@ -47,15 +85,6 @@ export default function ActionPanel({ onRefresh, selectedRegion, selectedYear }:
     } finally {
       setIsSharing(false);
       setShowShareMenu(false);
-    }
-  };
-
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    try {
-      await onRefresh();
-    } finally {
-      setIsRefreshing(false);
     }
   };
 
@@ -135,15 +164,6 @@ export default function ActionPanel({ onRefresh, selectedRegion, selectedYear }:
           </div>
         )}
       </div>
-
-      <button
-        onClick={handleRefresh}
-        disabled={isRefreshing}
-        className="flex items-center space-x-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-        <span>{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-      </button>
     </div>
   );
 }
